@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+
+# Coverage reports
+coverage/
+
+# Config files (they have their own format)
+*.config.js
+*.config.ts
+next.config.js
+tailwind.config.ts
+postcss.config.js
+
+# Auto-generated
+next-env.d.ts
