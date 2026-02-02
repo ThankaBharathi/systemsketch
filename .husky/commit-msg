@@ -3,7 +3,10 @@
 
 echo "📝 Checking commit message format..."
 
-npx --no -- commitlint --edit ${1}
+# Change to web directory for commitlint
+cd web
+
+pnpm exec commitlint --edit ${1}
 
 if [ $? -ne 0 ]; then
   echo ""

@@ -3,9 +3,12 @@
 
 echo "🚀 Running pre-push checks..."
 
+# Change to web directory
+cd web
+
 # Type check
 echo "📝 Type checking..."
-npx tsc --noEmit
+pnpm type-check
 if [ $? -ne 0 ]; then
   echo "❌ TypeScript errors found!"
   exit 1
@@ -13,7 +16,7 @@ fi
 
 # Run tests
 echo "🧪 Running tests..."
-npm run test:ci
+pnpm test:ci
 if [ $? -ne 0 ]; then
   echo "❌ Tests failed!"
   exit 1

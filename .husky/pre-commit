@@ -3,10 +3,12 @@
 
 echo "🔍 Running pre-commit checks..."
 
-# Run lint-staged (only checks changed files)
-npx lint-staged
+# Change to web directory
+cd web
 
-# Check if lint-staged passed
+# Run lint-staged
+pnpm exec lint-staged
+
 if [ $? -ne 0 ]; then
   echo "❌ Pre-commit checks failed!"
   echo "Please fix the errors above and try again."
