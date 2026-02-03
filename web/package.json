@@ -8,24 +8,20 @@
     "start": "next start",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
-
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
-
     "type-check": "tsc --noEmit",
-
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --passWithNoTests",
-
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
   },
-
   "dependencies": {
-    "@prisma/client": "^7.3.0",
+    "@auth/prisma-adapter": "^2.11.1",
+    "@prisma/client": "^6.19.2",
     "@tambo-ai/react": "^0.73.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.2",
@@ -66,7 +62,7 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "prisma": "^7.3.0",
+    "prisma": "^6.19.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
