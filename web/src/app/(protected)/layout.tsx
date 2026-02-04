@@ -1,14 +1,16 @@
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+
+import { auth } from '@/auth';
 
 export default async function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // v5: Use auth() instead of getServerSession()
   const session = await auth();
 
-  if (!session) {
+  if (!session?.user) {
     redirect('/login');
   }
 
