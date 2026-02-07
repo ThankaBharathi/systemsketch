@@ -1,9 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-
 import { AuthProvider } from './auth-provider';
-import { TamboProvider } from '@/lib/tambo';
+import { ThemeProvider } from './theme-provider';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -12,9 +11,12 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <AuthProvider>
-      <TamboProvider>
+      <ThemeProvider>
         {children}
-      </TamboProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
+
+export { AuthProvider } from './auth-provider';
+export { ThemeProvider, useTheme } from './theme-provider';

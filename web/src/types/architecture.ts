@@ -1,4 +1,3 @@
-// Node types for architecture diagram
 export type NodeType =
   | 'service'
   | 'database'
@@ -8,23 +7,28 @@ export type NodeType =
   | 'loadbalancer'
   | 'client';
 
-// Position on canvas
+export type NodeStatus = 'healthy' | 'warning' | 'error';
+export type BottleneckSeverity = 'high' | 'medium' | 'low';
+export type MessageIntent = 'design' | 'add' | 'analyze' | 'question' | 'greeting' | 'unknown';
+
 export interface Position {
   x: number;
   y: number;
 }
 
-// Architecture node data
 export interface ArchitectureNodeData {
   id: string;
   type: NodeType;
   name: string;
   description?: string;
-  status?: 'healthy' | 'warning' | 'error';
+  status?: NodeStatus;
   metadata?: Record<string, unknown>;
 }
 
-// Connection between nodes
+export interface ArchitectureNodeWithPosition extends ArchitectureNodeData {
+  position: Position;
+}
+
 export interface ArchitectureConnection {
   id: string;
   source: string;
@@ -32,20 +36,44 @@ export interface ArchitectureConnection {
   label?: string;
   animated?: boolean;
 }
-export interface ArchitectureFlowData {
-  name: string;
-  type: NodeType;
-  description?: string;
-  status?: 'healthy' | 'warning' | 'error';
-}
 
-// Complete architecture state
 export interface ArchitectureState {
   nodes: ArchitectureNodeData[];
   connections: ArchitectureConnection[];
 }
 
-// Node colors mapping
+export interface ArchitectureFlowData {
+  name: string;
+  type: NodeType;
+  description?: string;
+  status?: NodeStatus;
+  icon?: string;
+  [key: string]: unknown;
+}
+
+export interface AIArchitectureResponse {
+  name: string;
+  description: string;
+  nodes: ArchitectureNodeData[];
+  connections: ArchitectureConnection[];
+  insights?: ArchitectureInsights;
+  isAddition?: boolean;
+  message?: string;
+}
+
+export interface ArchitectureInsights {
+  bottlenecks?: string[];
+  tradeoffs?: string[];
+  scalingTips?: string[];
+}
+
+export interface BottleneckInfo {
+  nodeId: string;
+  issue: string;
+  severity: BottleneckSeverity;
+  solution: string;
+}
+
 export const NODE_COLORS: Record<NodeType, { bg: string; border: string; text: string }> = {
   service: { bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700' },
   database: { bg: 'bg-green-50', border: 'border-green-500', text: 'text-green-700' },
@@ -56,7 +84,6 @@ export const NODE_COLORS: Record<NodeType, { bg: string; border: string; text: s
   client: { bg: 'bg-cyan-50', border: 'border-cyan-500', text: 'text-cyan-700' },
 };
 
-// Node icons mapping
 export const NODE_ICONS: Record<NodeType, string> = {
   service: '📦',
   database: '🗄️',

@@ -1,74 +1,52 @@
-// ========================================
-// PRISMA SCHEMA FOR SYSTEMSKETCH
-// ========================================
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
-// ========================================
-// USER MODEL (for authentication)
-// ========================================
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?   // null if using OAuth
-  
-  // Relations
-  accounts      Account[]
-  sessions      Session[]
-  designs       Design[]
-  
-  // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-// ========================================
-// ACCOUNT MODEL (for OAuth providers)
-// ========================================
 model Account {
   id                String  @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? 
-  access_token      String? 
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? 
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
 
-// ========================================
-// SESSION MODEL (for auth sessions)
-// ========================================
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ========================================
-// VERIFICATION TOKEN (for email verification)
-// ========================================
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  accounts      Account[]
+  sessions      Session[]
+  designs       Design[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -77,55 +55,16 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// ========================================
-// DESIGN MODEL (saved architectures)
-// ========================================
 model Design {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  
-  // Architecture data (stored as JSON)
-  nodes       Json     @default("[]")
-  connections Json     @default("[]")
-  canvasState Json?    // zoom, pan position
-  
-  // Thumbnail for preview
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  nodes        String
+  edges        String
   thumbnailUrl String?
-  
-  // Sharing
-  isPublic    Boolean  @default(false)
-  shareId     String?  @unique // for sharing links
-  
-  // Relations
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages    Message[]
-  
-  // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@index([userId])
-}
-
-// ========================================
-// MESSAGE MODEL (chat history)
-// ========================================
-model Message {
-  id         String   @id @default(cuid())
-  role       String   // 'user' or 'assistant'
-  content    String   
-  
-  // Components that were rendered (for assistant messages)
-  components Json?
-  
-  // Relations
-  designId   String
-  design     Design   @relation(fields: [designId], references: [id], onDelete: Cascade)
-  
-  // Timestamps
-  createdAt  DateTime @default(now())
-  
-  @@index([designId])
+  isPublic     Boolean  @default(false)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

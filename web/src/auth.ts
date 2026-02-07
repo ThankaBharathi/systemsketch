@@ -1,75 +1,60 @@
-import { PrismaAdapter } from '@auth/prisma-adapter';
 import NextAuth from 'next-auth';
-import type { NextAuthConfig } from 'next-auth';
-import GitHub from 'next-auth/providers/github';
+import { PrismaAdapter } from '@auth/prisma-adapter';
 import Google from 'next-auth/providers/google';
-
+import GitHub from 'next-auth/providers/github';
+import Credentials from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 
-// NextAuth v5 Configuration
-const config: NextAuthConfig = {
-  // Prisma Adapter
+export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-
-  // OAuth Providers
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     }),
     GitHub({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientId: process.env.GITHUB_CLIENT_ID ?? '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+    }),
+    Credentials({
+      name: 'credentials',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email as string },
+        });
+
+        if (!user || !user.password) return null;
+
+        const isValid = await bcrypt.compare(
+          credentials.password as string,
+          user.password
+        );
+
+        if (!isValid) return null;
+
+        return { id: user.id, name: user.name, email: user.email, image: user.image };
+      },
     }),
   ],
-
-  // Session Strategy
-  session: {
-    strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-
-  // Custom Pages
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-
-  // Callbacks
+  session: { strategy: 'jwt' },
+  pages: { signIn: '/login', error: '/login' },
   callbacks: {
-    // Add user ID to JWT
-    jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
-      return token;
-    },
-
-    // Add user ID to session
-    session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
+    async session({ session, token }) {
+      if (token?.sub && session.user) {
+        session.user.id = token.sub;
       }
       return session;
     },
-
-    // Authorize callback for protected routes
-    authorized({ auth, request }) {
-      const isLoggedIn = !!auth?.user;
-      const isProtectedRoute = request.nextUrl.pathname.startsWith('/dashboard') ||
-                               request.nextUrl.pathname.startsWith('/design');
-
-      if (isProtectedRoute && !isLoggedIn) {
-        return Response.redirect(new URL('/login', request.nextUrl));
-      }
-
-      return true;
+    async jwt({ token, user }) {
+      if (user) token.sub = user.id;
+      return token;
     },
   },
-
-  // Debug in development
-  debug: process.env.NODE_ENV === 'development',
-};
-
-// Export NextAuth v5 handlers and helpers
-export const { handlers, auth, signIn, signOut } = NextAuth(config);
+});

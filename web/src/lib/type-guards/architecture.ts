@@ -1,16 +1,15 @@
-import type { ArchitectureFlowData } from '@/types/architecture';
+import type { ArchitectureFlowData, NodeType } from '@/types/architecture';
 
-export function isArchitectureFlowData(
-  data: unknown
-): data is ArchitectureFlowData {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
+const VALID_NODE_TYPES: NodeType[] = [
+  'service', 'database', 'cache', 'queue', 'gateway', 'loadbalancer', 'client',
+];
 
-  const record = data as Record<string, unknown>;
-
+export function isArchitectureFlowData(data: unknown): data is ArchitectureFlowData {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
   return (
-    typeof record.name === 'string' &&
-    typeof record.type === 'string'
+    typeof d.name === 'string' &&
+    typeof d.type === 'string' &&
+    VALID_NODE_TYPES.includes(d.type as NodeType)
   );
 }

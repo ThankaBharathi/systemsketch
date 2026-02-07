@@ -1,269 +1,198 @@
-import type { NodeType } from '@/types/architecture';
+// lib/ai/response-parser.ts
 
-interface ParsedAction {
-  type: 'add_node' | 'add_connection' | 'remove_node' | 'info' | 'unknown';
-  nodeType?: NodeType;
-  nodeName?: string;
-  nodeDescription?: string;
-  sourceNode?: string;
-  targetNode?: string;
-  connectionLabel?: string;
-  message: string;
+import type { MessageIntent } from '@/types/architecture';
+
+export interface ParsedMessage {
+  intent: MessageIntent;
+  isSystemDesign: boolean;
+  systemName?: string;
+  componentType?: string;
+  action?: 'create' | 'add' | 'remove' | 'analyze' | 'explain';
+  rawMessage: string;
 }
 
-// Parse user message and determine what action to take
-export function parseUserMessage(message: string): ParsedAction {
+// Parse user message to determine intent
+export function parseUserMessage(message: string): ParsedMessage {
   const lower = message.toLowerCase().trim();
-
-  // Add node patterns
-  if (lower.includes('add') || lower.includes('create')) {
-    // Service
-    if (lower.includes('service') || lower.includes('api') || lower.includes('microservice')) {
-      const name = extractName(message) || 'New Service';
-      return {
-        type: 'add_node',
-        nodeType: 'service',
-        nodeName: name,
-        nodeDescription: 'API Service',
-        message: `Adding service: ${name}`,
-      };
-    }
-
-    // Database
-    if (lower.includes('database') || lower.includes('db') || lower.includes('postgres') || lower.includes('mysql') || lower.includes('mongo')) {
-      const name = extractName(message) || 'Database';
-      return {
-        type: 'add_node',
-        nodeType: 'database',
-        nodeName: name,
-        nodeDescription: 'Data store',
-        message: `Adding database: ${name}`,
-      };
-    }
-
-    // Cache
-    if (lower.includes('cache') || lower.includes('redis') || lower.includes('memcache')) {
-      const name = extractName(message) || 'Redis Cache';
-      return {
-        type: 'add_node',
-        nodeType: 'cache',
-        nodeName: name,
-        nodeDescription: 'In-memory cache',
-        message: `Adding cache: ${name}`,
-      };
-    }
-
-    // Queue
-    if (lower.includes('queue') || lower.includes('kafka') || lower.includes('rabbitmq') || lower.includes('sqs')) {
-      const name = extractName(message) || 'Message Queue';
-      return {
-        type: 'add_node',
-        nodeType: 'queue',
-        nodeName: name,
-        nodeDescription: 'Message broker',
-        message: `Adding queue: ${name}`,
-      };
-    }
-
-    // Gateway
-    if (lower.includes('gateway') || lower.includes('api gateway')) {
-      const name = extractName(message) || 'API Gateway';
-      return {
-        type: 'add_node',
-        nodeType: 'gateway',
-        nodeName: name,
-        nodeDescription: 'API Gateway',
-        message: `Adding gateway: ${name}`,
-      };
-    }
-
-    // Load balancer
-    if (lower.includes('load balancer') || lower.includes('lb') || lower.includes('nginx')) {
-      const name = extractName(message) || 'Load Balancer';
-      return {
-        type: 'add_node',
-        nodeType: 'loadbalancer',
-        nodeName: name,
-        nodeDescription: 'Traffic distributor',
-        message: `Adding load balancer: ${name}`,
-      };
-    }
-  }
-
-  // Design system patterns
-  if (lower.includes('design twitter') || lower.includes('twitter')) {
+  
+  // Check for greetings first
+  if (isGreeting(lower)) {
     return {
-      type: 'info',
-      message: 'twitter',
+      intent: 'greeting',
+      isSystemDesign: false,
+      rawMessage: message,
     };
   }
-
-  if (lower.includes('design url') || lower.includes('url shortener')) {
+  
+  // Check for system design request
+  const designMatch = extractDesignRequest(lower);
+  if (designMatch) {
     return {
-      type: 'info',
-      message: 'url_shortener',
+      intent: 'design',
+      isSystemDesign: true,
+      systemName: designMatch,
+      action: 'create',
+      rawMessage: message,
     };
   }
-
-  if (lower.includes('design instagram') || lower.includes('instagram')) {
+  
+  // Check for add/modify request
+  const addMatch = extractAddRequest(lower);
+  if (addMatch) {
     return {
-      type: 'info',
-      message: 'instagram',
+      intent: 'add',
+      isSystemDesign: true,
+      componentType: addMatch,
+      action: 'add',
+      rawMessage: message,
     };
   }
-
-  if (lower.includes('design uber') || lower.includes('uber') || lower.includes('ride')) {
+  
+  // Check for analysis request
+  if (isAnalysisRequest(lower)) {
     return {
-      type: 'info',
-      message: 'uber',
+      intent: 'analyze',
+      isSystemDesign: true,
+      action: 'analyze',
+      rawMessage: message,
     };
   }
-
-  // Connection patterns
-  if (lower.includes('connect')) {
+  
+  // Check for questions
+  if (isQuestion(lower)) {
     return {
-      type: 'add_connection',
-      message: 'I can help you connect components. Which nodes would you like to connect?',
+      intent: 'question',
+      isSystemDesign: lower.includes('system') || lower.includes('architecture') || lower.includes('design'),
+      rawMessage: message,
     };
   }
-
-  // Hello / greeting
-  if (lower.includes('hello') || lower.includes('hi') || lower === 'hey') {
-    return {
-      type: 'info',
-      message: 'greeting',
-    };
-  }
-
-  // Unknown
+  
+  // Default: try to interpret as design request
   return {
-    type: 'unknown',
-    message: lower,
+    intent: 'design',
+    isSystemDesign: true,
+    systemName: message,
+    action: 'create',
+    rawMessage: message,
   };
 }
 
-// Extract name from message
-function extractName(message: string): string | null {
-  // Try to extract quoted name
-  const quoted = message.match(/["']([^"']+)["']/);
-  if (quoted) return quoted[1];
+// Check if message is a greeting
+function isGreeting(message: string): boolean {
+  const greetings = ['hello', 'hi', 'hey', 'greetings', 'howdy', 'good morning', 'good afternoon', 'good evening'];
+  return greetings.some(g => message === g || message.startsWith(g + ' ') || message.startsWith(g + '!') || message.startsWith(g + ','));
+}
 
-  // Try to extract name after "called" or "named"
-  const named = message.match(/(?:called|named)\s+(\w+)/i);
-  if (named) return named[1];
-
+// Extract system name from design request
+function extractDesignRequest(message: string): string | null {
+  // Patterns like "design twitter", "build a url shortener", "create netflix architecture"
+  const patterns = [
+    /(?:design|build|create|architect|make)\s+(?:a\s+)?(?:the\s+)?(.+?)(?:\s+architecture|\s+system)?$/i,
+    /(.+?)\s+(?:architecture|system|design)$/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  
+  // Check for direct mentions of known system types
+  const systems = ['twitter', 'instagram', 'whatsapp', 'uber', 'netflix', 'youtube', 'amazon', 'facebook', 'slack', 'discord', 'spotify', 'airbnb', 'linkedin', 'pinterest', 'reddit', 'tiktok', 'zoom', 'stripe', 'paypal'];
+  
+  for (const system of systems) {
+    if (message.includes(system)) {
+      return system.charAt(0).toUpperCase() + system.slice(1);
+    }
+  }
+  
+  // Check for generic design keywords
+  if (message.includes('design') || message.includes('build') || message.includes('create') || message.includes('architect')) {
+    return message.replace(/^(design|build|create|architect)\s+/i, '').trim();
+  }
+  
   return null;
 }
 
-// Get predefined architecture for known systems
-export function getSystemArchitecture(system: string): {
-  nodes: { type: NodeType; name: string; description: string }[];
-  connections: { source: string; target: string; label?: string }[];
-  description: string;
-} | null {
-  const systems: Record<string, ReturnType<typeof getSystemArchitecture>> = {
-    twitter: {
-      description: `🐦 **Twitter Architecture**
+// Extract component type from add request
+function extractAddRequest(message: string): string | null {
+  if (!message.includes('add') && !message.includes('include') && !message.includes('connect')) {
+    return null;
+  }
+  
+  const componentTypes = [
+    'cache', 'redis', 'memcached',
+    'database', 'db', 'postgres', 'postgresql', 'mysql', 'mongodb', 'dynamodb',
+    'queue', 'kafka', 'rabbitmq', 'sqs',
+    'gateway', 'api gateway',
+    'load balancer', 'loadbalancer', 'lb', 'nginx',
+    'service', 'microservice',
+    'authentication', 'auth',
+    'cdn',
+    'storage', 's3',
+    'worker', 'workers',
+    'notification', 'notifications',
+    'search', 'elasticsearch',
+  ];
+  
+  for (const component of componentTypes) {
+    if (message.includes(component)) {
+      return component;
+    }
+  }
+  
+  return message.replace(/^(add|include|connect)\s+/i, '').trim();
+}
 
-I'll add the core components for Twitter:`,
-      nodes: [
-        { type: 'client', name: 'Mobile/Web App', description: 'User interface' },
-        { type: 'gateway', name: 'API Gateway', description: 'Request routing' },
-        { type: 'service', name: 'User Service', description: 'Auth & profiles' },
-        { type: 'service', name: 'Tweet Service', description: 'Create/read tweets' },
-        { type: 'service', name: 'Timeline Service', description: 'Feed generation' },
-        { type: 'database', name: 'PostgreSQL', description: 'User data' },
-        { type: 'cache', name: 'Redis', description: 'Feed cache' },
-        { type: 'queue', name: 'Kafka', description: 'Event streaming' },
-      ],
-      connections: [
-        { source: 'Mobile/Web App', target: 'API Gateway' },
-        { source: 'API Gateway', target: 'User Service' },
-        { source: 'API Gateway', target: 'Tweet Service' },
-        { source: 'API Gateway', target: 'Timeline Service' },
-        { source: 'User Service', target: 'PostgreSQL' },
-        { source: 'Tweet Service', target: 'PostgreSQL' },
-        { source: 'Tweet Service', target: 'Kafka' },
-        { source: 'Timeline Service', target: 'Redis' },
-        { source: 'Kafka', target: 'Timeline Service' },
-      ],
-    },
+// Check if message is an analysis request
+function isAnalysisRequest(message: string): boolean {
+  const analysisKeywords = [
+    'bottleneck', 'bottlenecks',
+    'analyze', 'analysis',
+    'issue', 'issues', 'problem', 'problems',
+    'scale', 'scaling',
+    'optimize', 'optimization',
+    'improve', 'improvement',
+    'failure', 'failures', 'fail',
+    'risk', 'risks',
+    'performance',
+  ];
+  
+  return analysisKeywords.some(keyword => message.includes(keyword));
+}
 
-    url_shortener: {
-      description: `🔗 **URL Shortener Architecture**
+// Check if message is a question
+function isQuestion(message: string): boolean {
+  return message.endsWith('?') || 
+    message.startsWith('what') ||
+    message.startsWith('how') ||
+    message.startsWith('why') ||
+    message.startsWith('when') ||
+    message.startsWith('where') ||
+    message.startsWith('explain') ||
+    message.startsWith('tell me');
+}
 
-Simple but scalable design:`,
-      nodes: [
-        { type: 'client', name: 'Web Client', description: 'User interface' },
-        { type: 'loadbalancer', name: 'Load Balancer', description: 'Nginx' },
-        { type: 'service', name: 'URL Service', description: 'Shorten & redirect' },
-        { type: 'database', name: 'MySQL', description: 'URL mappings' },
-        { type: 'cache', name: 'Redis', description: 'Hot URLs cache' },
-      ],
-      connections: [
-        { source: 'Web Client', target: 'Load Balancer' },
-        { source: 'Load Balancer', target: 'URL Service' },
-        { source: 'URL Service', target: 'Redis', label: 'cache lookup' },
-        { source: 'URL Service', target: 'MySQL', label: 'store/retrieve' },
-      ],
-    },
+// Get friendly response for greetings
+export function getGreetingResponse(): string {
+  const greetings = [
+    "👋 Hello! I'm SystemSketch, your AI system design assistant.\n\nI can help you design any system architecture. Just tell me what you want to build!\n\nTry: \"Design WhatsApp\" or \"Design a URL Shortener\"",
+    "👋 Hi there! Ready to architect some systems?\n\nJust describe what you want to build and I'll create the architecture for you.\n\nExamples: \"Design Netflix\", \"Design Uber\", \"Design a Payment System\"",
+    "👋 Hey! I'm here to help you design system architectures.\n\nWhat would you like to build today?\n\nYou can say things like: \"Design Twitter\" or \"Build a notification system\"",
+  ];
+  
+  return greetings[Math.floor(Math.random() * greetings.length)];
+}
 
-    instagram: {
-      description: `📸 **Instagram Architecture**
+// Get guidance for off-topic messages
+export function getGuidanceResponse(): string {
+  return `🤔 I specialize in system design and architecture.
 
-Photo-focused social platform:`,
-      nodes: [
-        { type: 'client', name: 'Mobile App', description: 'iOS/Android' },
-        { type: 'gateway', name: 'API Gateway', description: 'Request handler' },
-        { type: 'service', name: 'User Service', description: 'Profiles & auth' },
-        { type: 'service', name: 'Photo Service', description: 'Upload & process' },
-        { type: 'service', name: 'Feed Service', description: 'Home feed' },
-        { type: 'database', name: 'PostgreSQL', description: 'Metadata' },
-        { type: 'database', name: 'S3 Storage', description: 'Photo storage' },
-        { type: 'cache', name: 'Redis', description: 'Feed cache' },
-        { type: 'queue', name: 'RabbitMQ', description: 'Async processing' },
-      ],
-      connections: [
-        { source: 'Mobile App', target: 'API Gateway' },
-        { source: 'API Gateway', target: 'User Service' },
-        { source: 'API Gateway', target: 'Photo Service' },
-        { source: 'API Gateway', target: 'Feed Service' },
-        { source: 'Photo Service', target: 'S3 Storage' },
-        { source: 'Photo Service', target: 'RabbitMQ' },
-        { source: 'Feed Service', target: 'Redis' },
-      ],
-    },
+Try asking me to:
+• **Design a system**: "Design WhatsApp", "Build Netflix"
+• **Add components**: "Add a caching layer", "Include message queue"
+• **Analyze architecture**: "Show bottlenecks", "How to scale this?"
 
-    uber: {
-      description: `🚗 **Uber Architecture**
-
-Real-time ride-sharing platform:`,
-      nodes: [
-        { type: 'client', name: 'Rider App', description: 'Request rides' },
-        { type: 'client', name: 'Driver App', description: 'Accept rides' },
-        { type: 'gateway', name: 'API Gateway', description: 'Route requests' },
-        { type: 'service', name: 'User Service', description: 'Rider/driver profiles' },
-        { type: 'service', name: 'Ride Service', description: 'Match & manage' },
-        { type: 'service', name: 'Location Service', description: 'Real-time GPS' },
-        { type: 'service', name: 'Payment Service', description: 'Transactions' },
-        { type: 'database', name: 'PostgreSQL', description: 'User data' },
-        { type: 'cache', name: 'Redis', description: 'Location cache' },
-        { type: 'queue', name: 'Kafka', description: 'Events' },
-      ],
-      connections: [
-        { source: 'Rider App', target: 'API Gateway' },
-        { source: 'Driver App', target: 'API Gateway' },
-        { source: 'API Gateway', target: 'User Service' },
-        { source: 'API Gateway', target: 'Ride Service' },
-        { source: 'Ride Service', target: 'Location Service' },
-        { source: 'Ride Service', target: 'Payment Service' },
-        { source: 'Location Service', target: 'Redis' },
-        { source: 'Ride Service', target: 'Kafka' },
-      ],
-    },
-
-    greeting: null,
-  };
-
-  return systems[system] || null;
+What would you like to design?`;
 }

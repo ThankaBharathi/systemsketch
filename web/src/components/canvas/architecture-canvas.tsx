@@ -11,21 +11,17 @@ import {
   type Node,
   type Edge,
   type Connection,
-  type NodeTypes,
+  type NodeChange,
+  type EdgeChange,
   BackgroundVariant,
+  MarkerType,
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+import '@xyflow/react/dist/base.css';
 import { useCallback, useMemo, useEffect } from 'react';
 
-import { BaseNode } from '@/components/nodes/base-node';
-import type {
-  ArchitectureNodeData,
-  ArchitectureConnection,
-} from '@/types/architecture';
-
-const nodeTypes: NodeTypes = {
-  architectureNode: BaseNode,
-};
+import { nodeTypes } from '@/components/nodes';
+import { edgeTypes } from '@/components/edges';
+import type { ArchitectureNodeData, ArchitectureConnection } from '@/types/architecture';
 
 interface ArchitectureCanvasProps {
   initialNodes?: ArchitectureNodeData[];
@@ -33,135 +29,181 @@ interface ArchitectureCanvasProps {
   onNodeSelect?: (node: ArchitectureNodeData | null) => void;
 }
 
-type CanvasNodeData = {
-  type?: string;
-};
+function calculateNodePositions(nodes: ArchitectureNodeData[]): Node[] {
+  const typeOrder: Record<string, number> = {
+    client: 0,
+    loadbalancer: 1,
+    gateway: 1,
+    service: 2,
+    cache: 3,
+    queue: 3,
+    database: 3,
+  };
+
+  const tiers: Record<number, ArchitectureNodeData[]> = {};
+  nodes.forEach((node) => {
+    const tier = typeOrder[node.type] ?? 2;
+    if (!tiers[tier]) tiers[tier] = [];
+    tiers[tier].push(node);
+  });
+
+  const result: Node[] = [];
+  const tierKeys = Object.keys(tiers).map(Number).sort();
+
+  tierKeys.forEach((tier, tierIndex) => {
+    const tierNodes = tiers[tier];
+    const tierWidth = tierNodes.length * 220;
+    const startX = (900 - tierWidth) / 2 + 100;
+
+    tierNodes.forEach((node, nodeIndex) => {
+      result.push({
+        id: node.id,
+        type: node.type,
+        position: { x: startX + nodeIndex * 220, y: 80 + tierIndex * 160 },
+        data: {
+          name: node.name,
+          type: node.type,
+          description: node.description,
+          status: node.status,
+        },
+      });
+    });
+  });
+
+  return result;
+}
+
+// Stable latency based on connection id
+function getStableLatency(connId: string): number {
+  let hash = 0;
+  for (let i = 0; i < connId.length; i++) {
+    hash = ((hash << 5) - hash + connId.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(hash) % 55) + 5;
+}
 
 export function ArchitectureCanvas({
   initialNodes = [],
   initialConnections = [],
   onNodeSelect,
 }: ArchitectureCanvasProps) {
-  /**
-   * Convert architecture nodes → React Flow nodes
-   */
-  const flowNodes = useMemo<Node[]>(() => {
-    return initialNodes.map((node, index) => ({
-      id: node.id,
-      type: 'architectureNode',
-      position: {
-        x: 120 + (index % 3) * 260,
-        y: 120 + Math.floor(index / 3) * 160,
-      },
-      data: {
-        name: node.name,
-        type: node.type,
-        description: node.description,
-        status: node.status,
-      },
-    }));
-  }, [initialNodes]);
+  const flowNodes = useMemo(() => calculateNodePositions(initialNodes), [initialNodes]);
 
-  /**
-   * Convert architecture connections → React Flow edges
-   */
   const flowEdges = useMemo<Edge[]>(() => {
-    return initialConnections.map((conn) => ({
-      id: conn.id,
-      source: conn.source,
-      target: conn.target,
-      label: conn.label,
-      animated: conn.animated ?? true,
-      style: { stroke: '#6366f1', strokeWidth: 2 },
-      labelStyle: { fill: '#374151', fontWeight: 500 },
-      labelBgStyle: { fill: '#ffffff', fillOpacity: 0.85 },
-    }));
+    if (!Array.isArray(initialConnections)) return [];
+
+    return initialConnections
+      .filter((conn) => conn && conn.source && conn.target)
+      .map((conn) => {
+        const latency = getStableLatency(conn.id || `${conn.source}-${conn.target}`);
+        const isHot = latency > 50;
+
+        return {
+          id: conn.id || `edge-${conn.source}-${conn.target}`,
+          source: conn.source,
+          target: conn.target,
+          type: 'smoothstep',
+          animated: true,
+          label: `${conn.label || 'HTTP'} • ${latency}ms`,
+          labelStyle: { fill: '#111827', fontWeight: 600, fontSize: 12 },
+          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
+          labelBgPadding: [6, 3] as [number, number],
+          labelBgBorderRadius: 6,
+          style: {
+            stroke: isHot ? '#ef4444' : '#6366f1',
+            strokeWidth: isHot ? 3 : 2,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isHot ? '#ef4444' : '#6366f1',
+          },
+        };
+      });
   }, [initialConnections]);
 
-  /**
-   * 🚨 IMPORTANT: initialize EMPTY
-   */
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [nodes, setNodes, onNodesChangeHandler] = useNodesState<Node>(flowNodes);
+  const [edges, setEdges, onEdgesChangeHandler] = useEdgesState<Edge>(flowEdges);
 
-    useEffect(() => {
-      setNodes(flowNodes);
-    }, [flowNodes, setNodes]);
+  useEffect(() => setNodes(flowNodes), [flowNodes, setNodes]);
+  useEffect(() => setEdges(flowEdges), [flowEdges, setEdges]);
 
-    useEffect(() => {
-      setEdges(flowEdges);
-    }, [flowEdges, setEdges]);
-
-    const onConnect = useCallback(
-      (params: Connection) => {
-        setEdges((eds) =>
-          addEdge(
-            {
-              ...params,
-              animated: true,
-              style: { stroke: '#6366f1', strokeWidth: 2 },
-            } as Edge,
-            eds
-          )
-        );
-      },
-      [setEdges]
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => onNodesChangeHandler(changes),
+    [onNodesChangeHandler]
   );
 
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => onEdgesChangeHandler(changes),
+    [onEdgesChangeHandler]
+  );
 
-  /**
-   * Node click → sidebar info
-   */
+  const onConnect = useCallback(
+    (params: Connection) => {
+      const newEdge: Edge = {
+        id: `edge-${params.source}-${params.target}-${Date.now()}`,
+        source: params.source ?? '',
+        target: params.target ?? '',
+        type: 'smoothstep',
+        animated: true,
+        label: 'HTTP',
+        style: { stroke: '#6366f1', strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
+      };
+      setEdges((eds) => addEdge(newEdge, eds));
+    },
+    [setEdges]
+  );
+
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       if (!onNodeSelect) return;
-
+      const d = node.data as Record<string, unknown>;
       onNodeSelect({
         id: node.id,
-        ...(node.data as Omit<ArchitectureNodeData, 'id'>),
+        name: (d.name as string) ?? node.id,
+        type: (d.type as ArchitectureNodeData['type']) ?? 'service',
+        description: d.description as string | undefined,
+        status: d.status as ArchitectureNodeData['status'],
       });
     },
     [onNodeSelect]
   );
 
-  const onPaneClick = useCallback(() => {
-    onNodeSelect?.(null);
-  }, [onNodeSelect]);
-
   return (
-    <div className="h-full w-full">
+    <div className="w-full h-full absolute inset-0">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        edgeTypes={edgeTypes}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
+        fitViewOptions={{ padding: 0.3 }}
+        minZoom={0.3}
         maxZoom={2}
+        proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <Controls className="!bg-white !border !border-gray-200 !shadow-lg" />
+        <Background variant={BackgroundVariant.Dots} gap={26} size={1.6} color="#cbd5e1" />
+        <Controls className="!bg-slate-900 !border !border-slate-700 !shadow-xl !rounded-xl" />
         <MiniMap
-          className="!bg-white !border !border-gray-200 !shadow-lg"
+          className="!bg-white !border !border-gray-200 !shadow-lg !rounded-xl"
           nodeColor={(node) => {
-          const colors: Record<string, string> = {
-            service: '#3b82f6',
-            database: '#22c55e',
-            cache: '#ef4444',
-            queue: '#f59e0b',
-            gateway: '#8b5cf6',
-            loadbalancer: '#6366f1',
-            client: '#06b6d4',
-          };
-
-          const type = (node.data as CanvasNodeData)?.type;
-          return type ? colors[type] : '#9ca3af';
-        }}
+            const colors: Record<string, string> = {
+              service: '#3b82f6',
+              database: '#22c55e',
+              cache: '#ef4444',
+              queue: '#f59e0b',
+              gateway: '#8b5cf6',
+              loadbalancer: '#6366f1',
+              client: '#06b6d4',
+            };
+            const type = (node.data as { type?: string })?.type;
+            return type ? colors[type] ?? '#9ca3af' : '#9ca3af';
+          }}
+          maskColor="rgba(0, 0, 0, 0.1)"
         />
       </ReactFlow>
     </div>

@@ -1,11 +1,11 @@
-import { auth } from '@/auth';
-
-export default auth;
+export { auth as middleware } from '@/auth';
 
 export const config = {
-  // Protect these routes
   matcher: [
     '/dashboard/:path*',
-    '/design/:path*',
+    '/designs/:path*',
+    '/interview/:path*',
+    '/settings/:path*',
+    '/templates/:path*',
   ],
 };

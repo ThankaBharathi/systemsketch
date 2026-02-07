@@ -1,104 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
 
-// GET single design
+const updateDesignSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  nodes: z.string().optional(),
+  edges: z.string().optional(),
+  thumbnailUrl: z.string().optional(),
+  isPublic: z.boolean().optional(),
+});
+
 export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
-
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id } = await params;
+
+    const design = await prisma.design.findUnique({ where: { id } });
+
+    if (!design) {
+      return NextResponse.json({ error: 'Design not found' }, { status: 404 });
     }
 
-    const design = await prisma.design.findUnique({
-      where: { id },
-    });
-
-    if (!design || design.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const isOwner = session?.user?.id === design.userId;
+    if (!design.isPublic && !isOwner) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json(design);
+    return NextResponse.json({ design, isOwner });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('Error fetching design:', error);
+    return NextResponse.json({ error: 'Failed to fetch design' }, { status: 500 });
   }
 }
 
-// PATCH update design
-export async function PATCH(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
-
     const session = await auth();
+    const { id } = await params;
+
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const design = await prisma.design.findUnique({
-      where: { id },
-    });
+    const existing = await prisma.design.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ error: 'Design not found' }, { status: 404 });
+    if (existing.userId !== session.user.id) return NextResponse.json({ error: 'Access denied' }, { status: 403 });
 
-    if (!design || design.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const body = await request.json();
+    const result = updateDesignSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({ error: 'Invalid data', details: result.error.flatten() }, { status: 400 });
     }
 
-    const body = await req.json();
-
-    const updated = await prisma.design.update({
-      where: { id },
-      data: {
-        name: body.name,
-        description: body.description,
-        nodes: body.nodes,
-        connections: body.connections,
-        updatedAt: new Date(),
-      },
-    });
-
-    return NextResponse.json(updated);
+    const design = await prisma.design.update({ where: { id }, data: result.data });
+    return NextResponse.json({ design });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('Error updating design:', error);
+    return NextResponse.json({ error: 'Failed to update design' }, { status: 500 });
   }
 }
 
-// DELETE design
 export async function DELETE(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
-
     const session = await auth();
+    const { id } = await params;
+
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const design = await prisma.design.findUnique({
-      where: { id },
-    });
+    const existing = await prisma.design.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ error: 'Design not found' }, { status: 404 });
+    if (existing.userId !== session.user.id) return NextResponse.json({ error: 'Access denied' }, { status: 403 });
 
-    if (!design || design.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-
-    await prisma.design.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true });
+    await prisma.design.delete({ where: { id } });
+    return NextResponse.json({ message: 'Design deleted successfully' });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('Error deleting design:', error);
+    return NextResponse.json({ error: 'Failed to delete design' }, { status: 500 });
   }
 }

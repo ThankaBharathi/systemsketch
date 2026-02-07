@@ -1,32 +1,19 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-
+import './globals.css';
 import { Providers } from '@/components/providers';
 
-import './globals.css';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: {
-    default: 'SystemSketch - Speak System Design, See Architecture',
-    template: '%s | SystemSketch',
-  },
-  description:
-    'Build system architecture through natural language using Tambo Generative UI.',
+  title: 'SystemSketch - AI-Powered System Design',
+  description: 'Design any system architecture with just your words',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-white antialiased">
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen`} suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>
