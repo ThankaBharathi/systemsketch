@@ -49,14 +49,37 @@ export async function generateArchitecture(
   message: string;
 }> {
   // Determine if this is a modification or new design
-  const isModification = existingNodes && existingNodes.length > 0 && 
-    (userPrompt.toLowerCase().includes('add') || 
-     userPrompt.toLowerCase().includes('include') ||
-     userPrompt.toLowerCase().includes('connect'));
+  const lower = userPrompt.toLowerCase();
 
-  const systemPrompt = isModification 
-    ? MODIFICATION_PROMPT.replace('{existingNodeIds}', existingNodes!.map(n => n.id).join(', '))
-    : ARCHITECTURE_SYSTEM_PROMPT;
+const isModification =
+  existingNodes &&
+  existingNodes.length > 0 &&
+  (
+    lower.includes('add') ||
+    lower.includes('include') ||
+    lower.includes('attach') ||
+    lower.includes('insert') ||
+    lower.includes('put') ||
+    lower.includes('connect') ||
+    lower.includes('use') ||
+    lower.includes('enable') ||
+    lower.includes('scale') ||
+    lower.includes('cache') ||
+    lower.includes('redis') ||
+    lower.includes('database') ||
+    lower.includes('db') ||
+    lower.includes('queue') ||
+    lower.includes('kafka')
+  );
+
+
+
+  const systemPrompt = isModification
+  ? MODIFICATION_PROMPT
+      .replace('{existingNodeIds}', existingNodes!.map(n => n.id).join(', '))
+      .replace('{existingServices}', existingNodes!.filter(n=>n.type==='service').map(n=>n.id).join(', '))
+  : ARCHITECTURE_SYSTEM_PROMPT;
+
 
   try {
     const response = await fetch('/api/generate-architecture', {
@@ -83,31 +106,20 @@ export async function generateArchitecture(
     const architecture = parseAIResponse(data.content);
     
     // Convert to our types
-    const nodes = architecture.nodes.map(convertToNodeData);
-    const connections = architecture.connections.map(conn =>
-  convertToConnection(conn, architecture.nodes)
+    const nodes = (architecture.nodes || []).map(convertToNodeData);
+
+
+// 🔥 IMPORTANT FIX — use CONVERTED nodes for ID matching
+const connections = architecture.connections.map(conn =>
+  convertToConnection(conn, nodes)
 );
-
-
-    // If modification, merge with existing
-    if (isModification && existingNodes) {
-      return {
-        nodes: [...existingNodes, ...nodes],
-        connections: connections,
-        name: architecture.name || 'Updated Architecture',
-        description: architecture.description || '',
-        insights: architecture.insights,
-        message: architecture.message || `Added ${nodes.length} new component(s)`,
-      };
-    }
-
     return {
       nodes,
       connections,
       name: architecture.name,
       description: architecture.description,
       insights: architecture.insights,
-      message: `Created ${architecture.name} with ${nodes.length} components`,
+      message: architecture.message || 'Architecture updated',
     };
 
   } catch (error) {
@@ -159,27 +171,66 @@ function parseAIResponse(content: string): GeneratedArchitecture {
 
 // Convert generated node to our type
 function convertToNodeData(node: GeneratedNode): ArchitectureNodeData {
-  // Validate node type
-  const validTypes: NodeType[] = ['client', 'gateway', 'loadbalancer', 'service', 'database', 'cache', 'queue'];
-  const type = validTypes.includes(node.type) ? node.type : 'service';
-  
+  // 1️⃣ Safe defaults
+  const safeName = node.name ?? node.type ?? 'Service';
+  const nameLower = safeName.toLowerCase();
+
+  // 2️⃣ Start with AI type (if valid)
+  let type: NodeType = node.type as NodeType;
+
+  // 3️⃣ Semantic correction (NOT hardcoding — classification)
+  if (!type || type === 'service') {
+    if (nameLower.includes('redis') || nameLower.includes('cache')) {
+      type = 'cache';
+    } 
+    else if (nameLower.includes('kafka') || nameLower.includes('queue')) {
+      type = 'queue';
+    } 
+    else if (
+      nameLower.includes('db') ||
+      nameLower.includes('database') ||
+      nameLower.includes('postgres') ||
+      nameLower.includes('mysql') ||
+      nameLower.includes('cassandra')
+    ) {
+      type = 'database';
+    }
+  }
+
+  // 4️⃣ Validate final type
+  const validTypes: NodeType[] = [
+    'client',
+    'gateway',
+    'loadbalancer',
+    'service',
+    'database',
+    'cache',
+    'queue',
+  ];
+
+  if (!validTypes.includes(type)) {
+    type = 'service';
+  }
+
   return {
     id: node.id || `node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type,
-    name: node.name,
+    name: safeName, // ← use safeName
     description: node.description,
     status: node.status || 'healthy',
     metadata: {
       ...node.metadata,
-      position: node.position, // Store position in metadata for canvas
+      position: node.position,
     },
   };
 }
 
+
+
 // Convert generated connection to our type
 function convertToConnection(
   conn: GeneratedConnection,
-  nodes?: GeneratedNode[]
+  nodes?: ArchitectureNodeData[]
 ): ArchitectureConnection {
   const sourceNode = nodes?.find(n => n.id === conn.source);
   const targetNode = nodes?.find(n => n.id === conn.target);

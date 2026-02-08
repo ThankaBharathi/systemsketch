@@ -1,23 +1,15 @@
 import { generateArchitecture } from './architecture-generator';
-import type { ArchitectureNodeData } from '@/types';
-
-type Connection = {
-  id: string;
-  source: string;
-  target: string;
-  animated?: boolean;
-  label?: string;
-};
+import type { ArchitectureNodeData, ArchitectureConnection } from '@/types';
 
 export async function architectureAgent(
   userInput: string,
-  currentNodes: ArchitectureNodeData[] = []
+  currentNodes: ArchitectureNodeData[] = [],
+  currentConnections: ArchitectureConnection[] = []  // 🔥 ADD THIS PARAMETER
 ) {
   const text = userInput.toLowerCase();
-  const result = await generateArchitecture(userInput, currentNodes);
 
   // ======================================
-  // 🧹 DELETE ENGINE — REMOVE ONLY ONE NODE
+  // 🧹 DELETE ENGINE — HANDLE BEFORE AI CALL
   // ======================================
   if (text.includes('remove') || text.includes('delete')) {
     let updatedNodes = [...currentNodes];
@@ -34,84 +26,167 @@ export async function architectureAgent(
       }
     }
 
-    // remove connections linked to removed node
-    const cleanedConnections: Connection[] =
-      (result.connections || []).filter(
-        c => c.source !== removedNodeId && c.target !== removedNodeId
-      );
+    const cleanedConnections = currentConnections.filter(
+      c => c.source !== removedNodeId && c.target !== removedNodeId
+    );
 
     return {
-      name: result.name || 'Updated Architecture',
+      name: 'Updated Architecture',
       nodes: updatedNodes,
       connections: cleanedConnections,
-      message: 'Removed one component safely.',
+      message: removedNodeId 
+        ? `Removed ${currentNodes.find(n => n.id === removedNodeId)?.name || 'component'}` 
+        : 'No matching component found to remove',
     };
   }
+
+  // ======================================
+  // 🧠 CALL AI FOR DESIGN/ADD
+  // ======================================
+  const result = await generateArchitecture(userInput, currentNodes);
 
   // ======================================
   // 1️⃣ MERGE NODES (NO DUPLICATES)
   // ======================================
   const nodeMap = new Map<string, ArchitectureNodeData>();
 
+  // Add existing nodes first
   currentNodes.forEach(n => nodeMap.set(n.id, n));
-  result.nodes.forEach((n, index) => {
-  const safeId = `${n.id}-${index}-${Date.now()}`;
-  nodeMap.set(safeId, { ...n, id: safeId });
-});
 
+  // Add new nodes from AI (only if not duplicate)
+  result.nodes.forEach(n => {
+    if (!nodeMap.has(n.id)) {
+      nodeMap.set(n.id, n);
+    }
+  });
 
   const mergedNodes = Array.from(nodeMap.values());
 
   // ======================================
-  // 2️⃣ FIX MISSING CONNECTIONS
+  // 2️⃣ MERGE CONNECTIONS (FIXED!)
   // ======================================
-  let mergedConnections: Connection[] = result.connections || [];
+  const connectionMap = new Map<string, ArchitectureConnection>();
 
-  if (!mergedConnections || mergedConnections.length === 0) {
-    const services = mergedNodes.filter(n => n.type === 'service');
-    const databases = mergedNodes.filter(n => n.type === 'database');
-    const caches = mergedNodes.filter(n => n.type === 'cache');
-    const gateways = mergedNodes.filter(n => n.type === 'gateway');
+  // 🔥 FIX: Keep EXISTING connections first
+  currentConnections.forEach(conn => {
+    const key = `${conn.source}-${conn.target}`;
+    connectionMap.set(key, conn);
+  });
 
-    const auto: Connection[] = [];
+  // Add NEW connections from AI
+  (result.connections || []).forEach(conn => {
+    const key = `${conn.source}-${conn.target}`;
+    if (!connectionMap.has(key)) {
+      connectionMap.set(key, conn);
+    }
+  });
 
-    services.forEach(svc => {
-      databases.forEach(db => {
-        auto.push({
-          id: `edge-${svc.id}-${db.id}-${Date.now()}-${Math.random()}`,
-          source: svc.id,
-          target: db.id,
-          animated: true,
-        });
-      });
+  let mergedConnections = Array.from(connectionMap.values());
+// ======================================
+// 4️⃣ AUTO BUILD BASE CONNECTIONS (FIRST DESIGN FIX)
+// ======================================
+if (mergedConnections.length <= 1 && mergedNodes.length > 0) {
+  const clients = mergedNodes.filter(n => n.type === 'client');
+  const gateways = mergedNodes.filter(n => n.type === 'gateway');
+  const lbs = mergedNodes.filter(n => n.type === 'loadbalancer');
+  const services = mergedNodes.filter(n => n.type === 'service');
+  const databases = mergedNodes.filter(n => n.type === 'database');
 
-      caches.forEach(cache => {
-        auto.push({
-          id: `${svc.id}-${cache.id}-${Math.random()}`,
-          source: svc.id,
-          target: cache.id,
-          animated: true,
-        });
+  const autoEdges: ArchitectureConnection[] = [];
+
+  // Client → Gateway
+  clients.forEach(c => {
+    gateways.forEach(g => {
+      autoEdges.push({
+        id: `auto-${c.id}-${g.id}`,
+        source: c.id,
+        target: g.id,
+        animated: true,
+        label: 'HTTPS',
       });
     });
+  });
 
-    gateways.forEach(gw => {
-      services.forEach(svc => {
-        auto.push({
-          id: `${gw.id}-${svc.id}-${Math.random()}`,
-          source: gw.id,
-          target: svc.id,
-          animated: true,
-        });
+  // Gateway → LB
+  gateways.forEach(g => {
+    lbs.forEach(lb => {
+      autoEdges.push({
+        id: `auto-${g.id}-${lb.id}`,
+        source: g.id,
+        target: lb.id,
+        animated: true,
+        label: 'HTTP',
       });
     });
+  });
 
-    mergedConnections = auto;
+  // LB → Services
+  lbs.forEach(lb => {
+    services.forEach(s => {
+      autoEdges.push({
+        id: `auto-${lb.id}-${s.id}`,
+        source: lb.id,
+        target: s.id,
+        animated: true,
+        label: 'REST',
+      });
+    });
+  });
+
+  // Services → DB
+  services.forEach(s => {
+    databases.forEach(db => {
+      autoEdges.push({
+        id: `auto-${s.id}-${db.id}`,
+        source: s.id,
+        target: db.id,
+        animated: true,
+        label: 'SQL',
+      });
+    });
+  });
+
+  mergedConnections.push(...autoEdges);
+}
+
+  // ======================================
+  // 3️⃣ AUTO CONNECT IF AI FORGOT
+  // ======================================
+  const newNodes = result.nodes.filter(n => !currentNodes.find(c => c.id === n.id));
+  
+  if (newNodes.length > 0) {
+    const services = currentNodes.filter(n => n.type === 'service');
+    
+    newNodes.forEach(newNode => {
+      const hasConnection = mergedConnections.some(
+        c => c.source === newNode.id || c.target === newNode.id
+      );
+
+      if (!hasConnection) {
+        // Auto-connect based on type
+        if (newNode.type === 'database' || newNode.type === 'cache' || newNode.type === 'queue') {
+          services.forEach(svc => {
+            const connId = `auto-${svc.id}-${newNode.id}`;
+            if (!connectionMap.has(`${svc.id}-${newNode.id}`)) {
+              mergedConnections.push({
+                id: connId,
+                source: svc.id,
+                target: newNode.id,
+                animated: true,
+                label: newNode.type === 'database' ? 'SQL' : 
+                       newNode.type === 'cache' ? 'Redis' : 'Kafka',
+              });
+            }
+          });
+        }
+      }
+    });
   }
 
   return {
-    ...result,
+    name: result.name || 'Updated Architecture',
     nodes: mergedNodes,
     connections: mergedConnections,
+    message: result.message || `Architecture updated with ${mergedNodes.length} components`,
   };
 }

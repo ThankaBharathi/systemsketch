@@ -23,7 +23,7 @@ import { useCallback, useMemo, useEffect, useRef} from 'react';
 import { nodeTypes } from '@/components/nodes';
 import { edgeTypes } from '@/components/edges';
 import type { ArchitectureNodeData, ArchitectureConnection } from '@/types/architecture';
-import { ConnectionLineType } from '@xyflow/react';
+import { ConnectionLineType, ConnectionMode} from '@xyflow/react';
 
 interface ArchitectureCanvasProps {
   initialNodes?: ArchitectureNodeData[];
@@ -130,12 +130,14 @@ export function ArchitectureCanvas({
   const [edges, setEdges, onEdgesChangeHandler] = useEdgesState<Edge>(flowEdges);
 
   useEffect(() => {
-    setNodes(flowNodes);
-  }, [initialNodes]);
+  setNodes(flowNodes);
+}, [flowNodes]);
+
 
   useEffect(() => {
-    setEdges(flowEdges);
-  }, [initialConnections]);
+  setEdges(flowEdges);
+}, [flowEdges]);
+
 
   // Auto center ONLY first time a design loads
 useEffect(() => {
@@ -177,7 +179,7 @@ useEffect(() => {
         target: params.target ?? '',
         type: 'smoothstep',
         animated: true,
-        label: 'HTTP',
+        label: '',
         style: { stroke: '#6366f1', strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
       };
@@ -213,6 +215,8 @@ useEffect(() => {
         onConnect={onConnect}
         connectionLineStyle={{ stroke: '#6366f1', strokeWidth: 2 }}
         connectionLineType={ConnectionLineType.SmoothStep}
+        connectionMode={ConnectionMode.Loose}  // ⭐ ADD THIS
+        connectOnClick={false}
         onNodeClick={onNodeClick}
         onPaneClick={() => onNodeSelect?.(null)}
         defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}

@@ -9,7 +9,7 @@ import { ChatContainer, type Message } from '@/components/chat';
 import { WelcomeCard } from '@/components/guidance';
 import { ExportModal } from '@/components/export';
 import { HistorySidebar } from '@/components/history';
-import { DetailPanel} from '@/components/panels';
+import { DetailPanel } from '@/components/panels';
 import { BottleneckOverlay } from '@/components/canvas/bottleneck-overlay';
 import { Navbar } from '@/components/layout';
 import { useExport } from '@/lib/hooks';
@@ -167,66 +167,8 @@ const architectureTemplates: Record<string, {
 };
 
 // ============================================
-// LOCAL COMMAND PROCESSOR (fast fallback)
+// SCORE BAR COMPONENT
 // ============================================
-function processLocalCommand(
-  input: string,
-  currentNodes: ArchitectureNodeData[],
-  currentConnections: ArchitectureConnection[]
-): { nodes: ArchitectureNodeData[]; connections: ArchitectureConnection[]; message: string } | null {
-  const lower = input.toLowerCase().trim();
-
-  const concepts: Record<string, { type: ArchitectureNodeData['type']; keywords: string[] }> = {
-    cache: { type: 'cache', keywords: ['cache', 'redis', 'caching', 'memcached'] },
-    database: { type: 'database', keywords: ['database', 'db', 'postgres', 'mysql', 'mongo'] },
-    queue: { type: 'queue', keywords: ['queue', 'kafka', 'rabbitmq', 'events'] },
-    auth: { type: 'service', keywords: ['auth', 'authentication', 'login', 'jwt'] },
-    search: { type: 'service', keywords: ['search', 'elasticsearch'] },
-    gateway: { type: 'gateway', keywords: ['gateway', 'api gateway'] },
-    loadbalancer: { type: 'loadbalancer', keywords: ['load balancer', 'loadbalancer', 'lb', 'nginx'] },
-  };
-
-  // Detect add
-  if (lower.startsWith('add') || lower.startsWith('include')) {
-    for (const [key, config] of Object.entries(concepts)) {
-      if (config.keywords.some((w) => lower.includes(w))) {
-        const id = `${key}-${Date.now()}`;
-        const name = key.charAt(0).toUpperCase() + key.slice(1);
-        const newNode: ArchitectureNodeData = { id, type: config.type, name, status: 'healthy' };
-        const newNodes = [...currentNodes, newNode];
-        const newConns = [...currentConnections];
-
-        // Auto-connect to services
-        const services = currentNodes.filter((n) => n.type === 'service');
-        if (config.type === 'database' || config.type === 'cache') {
-          services.forEach((svc, i) => {
-            newConns.push({ id: `conn-${id}-${i}`, source: svc.id, target: id, animated: true });
-          });
-        }
-
-        return { nodes: newNodes, connections: newConns, message: `✅ Added ${name} to the architecture` };
-      }
-    }
-  }
-
-  // Detect remove
-  if (lower.startsWith('remove') || lower.startsWith('delete')) {
-    for (const [, config] of Object.entries(concepts)) {
-      if (config.keywords.some((w) => lower.includes(w))) {
-        const target = currentNodes.find((n) => n.type === config.type);
-        if (target) {
-          return {
-            nodes: currentNodes.filter((n) => n.id !== target.id),
-            connections: currentConnections.filter((c) => c.source !== target.id && c.target !== target.id),
-            message: `🗑️ Removed ${target.name}`,
-          };
-        }
-      }
-    }
-  }
-
-  return null;
-}
 function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div>
@@ -243,6 +185,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
+
 // ============================================
 // MAIN DESIGN EDITOR
 // ============================================
@@ -251,7 +194,6 @@ function DesignEditorContent() {
   const templateParam = searchParams.get('template');
   const loadId = searchParams.get('load');
   const mode = searchParams.get('mode');
-
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [nodes, setNodes] = useState<ArchitectureNodeData[]>([]);
@@ -276,7 +218,9 @@ function DesignEditorContent() {
     canvasElement: canvasRef.current,
   });
 
-  // Load template or saved design
+  // ============================================
+  // LOAD TEMPLATE OR SAVED DESIGN
+  // ============================================
   useEffect(() => {
     if (initialized) return;
 
@@ -289,10 +233,10 @@ function DesignEditorContent() {
         addMessage('assistant', `📂 Loaded **${saved.name}** with ${saved.nodes.length} components.`);
       }
     } else if (
-  templateParam &&
-  architectureTemplates[templateParam.toLowerCase()] &&
-  mode !== 'interview'
-) {
+      templateParam &&
+      architectureTemplates[templateParam.toLowerCase()] &&
+      mode !== 'interview'
+    ) {
       const template = architectureTemplates[templateParam.toLowerCase()];
       setNodes(template.nodes);
       setConnections(template.connections);
@@ -303,138 +247,170 @@ function DesignEditorContent() {
     setInitialized(true);
   }, [templateParam, loadId, initialized, getItem]);
 
+  // ============================================
+  // ADD MESSAGE HELPER
+  // ============================================
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     setMessages((prev) => [...prev, { id: nanoid(), role, content, timestamp: new Date() }]);
   }, []);
 
+  // ============================================
+  // 🔥 MAIN MESSAGE HANDLER (FIXED)
+  // ============================================
   const handleSendMessage = useCallback(
-  async (content: string) => {
-    addMessage('user', content);
-    setIsLoading(true);
+    async (content: string) => {
+      addMessage('user', content);
+      setIsLoading(true);
+      setError(null);
 
-    const lower = content.toLowerCase().trim();
+      const lower = content.toLowerCase().trim();
 
-    try {
-      // 1️⃣ Greeting
-      if (/^(hi|hello|hey)[\s!.,?]*$/i.test(lower)) {
-        addMessage('assistant', getGreetingResponse());
-        return;
-      }
-
-      // 2️⃣ Clear canvas
-      if (lower === 'clear' || lower === 'reset') {
-        setNodes([]);
-        setConnections([]);
-        setDesignName('Untitled Design');
-        addMessage('assistant', '🗑️ Canvas cleared.');
-        return;
-      }
-
-      // 3️⃣ Bottleneck analysis
-      if (lower.includes('bottleneck') || lower.includes('analyze')) {
-        setShowBottlenecks(true);
-        addMessage('assistant', '🔍 Analyzing architecture...');
-        return;
-      }
-
-      // 4️⃣ TEMPLATE LOAD (optional — keep for demo)
-      const templateKey = lower.replace(/^(design|build|create)\s+/i, '').trim();
-      if (architectureTemplates[templateKey]) {
-        const template = architectureTemplates[templateKey];
-        setNodes(template.nodes);
-        setConnections(template.connections);
-        setDesignName(template.name);
-        addMessage('assistant', `🎉 ${template.name} loaded.`);
-        return;
-      }
-
-      // 5️⃣ 🧠 PURE AI AGENT (NO KEYWORDS, NO HARDCODING)
-      addMessage('assistant', '🧠 Thinking like a system architect...');
-
-      const result = await architectureAgent(
-        content,
-        nodes.length > 0 ? nodes : undefined
-      );
-
-      const uniqueNodes = Array.from(
-        new Map(result.nodes.map(n => [n.id, n])).values()
-      );
-
-      setNodes(prev => {
-      const merged = [...prev];
-
-      uniqueNodes.forEach(newNode => {
-        if (!merged.some(n => n.id === newNode.id)) {
-          merged.push(newNode);
+      try {
+        // ─────────────────────────────────────
+        // 1️⃣ GREETING
+        // ─────────────────────────────────────
+        if (/^(hi|hello|hey)[\s!.,?]*$/i.test(lower)) {
+          addMessage('assistant', getGreetingResponse());
+          return;
         }
-      });
 
-      return merged;
-    });
+        // ─────────────────────────────────────
+        // 2️⃣ CLEAR CANVAS
+        // ─────────────────────────────────────
+        if (lower === 'clear' || lower === 'reset') {
+          setNodes([]);
+          setConnections([]);
+          setDesignName('Untitled Design');
+          addMessage('assistant', '🗑️ Canvas cleared. Ready for a new design!');
+          return;
+        }
 
-setConnections(prev => [
-  ...prev,
-  ...(result.connections || [])
-]);
+        // ─────────────────────────────────────
+        // 3️⃣ BOTTLENECK ANALYSIS
+        // ─────────────────────────────────────
+        if (lower.includes('bottleneck') || lower.includes('analyze')) {
+          if (nodes.length === 0) {
+            addMessage('assistant', '⚠️ No architecture to analyze. Design something first!');
+            return;
+          }
+          setShowBottlenecks(true);
+          addMessage('assistant', '🔍 Analyzing architecture for bottlenecks...');
+          return;
+        }
 
-      setDesignName(result.name);
+        // ─────────────────────────────────────
+        // 4️⃣ TEMPLATE LOAD (quick demo)
+        // ─────────────────────────────────────
+        // 4️⃣ TEMPLATE LOAD (ONLY for first design when canvas is empty)
+        const templateKey = lower.replace(/^(design|build|create)\s+/i, '').trim();
 
-      addMessage(
-  'assistant',
-  `✨ ${result.message}
-
-📐 Architecture updated intelligently.`
-);
-
-
-    } catch {
-      addMessage(
-        'assistant',
-        '⚠️ I could not understand that change. Try describing the system improvement.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  },
-  [addMessage, nodes, connections]
-);
+        if (nodes.length === 0 && architectureTemplates[templateKey]) {
+          const template = architectureTemplates[templateKey];
+          setNodes(template.nodes);
+          setConnections(template.connections);
+          setDesignName(template.name);
+          addMessage(
+            'assistant',
+            `🎉 **${template.name}** loaded with ${template.nodes.length} components!\n\nTry: "Add cache" or "Remove database"`
+          );
+          return;
+        }
 
 
+        // ─────────────────────────────────────
+        // 5️⃣ 🧠 AI AGENT (FIXED - pass connections!)
+        // ─────────────────────────────────────
+
+        const result = await architectureAgent(
+          content,
+          nodes,        // ✅ existing nodes
+          connections   // ✅ existing connections (FIXED!)
+        );
+
+        // ✅ SIMPLIFIED: Agent handles all merging, just set directly
+        setNodes(result.nodes);
+        setConnections(result.connections);
+
+        // Update design name only for new designs
+        if (result.name && result.name !== 'Updated Architecture' && nodes.length === 0) {
+          setDesignName(result.name);
+        }
+
+        addMessage(
+          'assistant',
+          `✨ ${result.message}\n\n📐 ${result.nodes.length} components | ${result.connections.length} connections`
+        );
+
+      } catch (err) {
+        console.error('AI Error:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        setError(errorMessage);
+        addMessage(
+          'assistant',
+          '⚠️ Something went wrong. Try rephrasing your request.\n\nExamples:\n• "Design Twitter"\n• "Add a cache"\n• "Remove the database"'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [addMessage, nodes, connections] // ✅ Added connections to deps
+  );
+
+  // ============================================
+  // SAVE DESIGN
+  // ============================================
   const handleSave = useCallback(() => {
-    if (nodes.length === 0) return;
+    if (nodes.length === 0) {
+      addMessage('assistant', '⚠️ Nothing to save. Design something first!');
+      return;
+    }
     setIsSaving(true);
     addItem({ name: designName, nodes, edges: connections });
     addMessage('assistant', `💾 Saved **${designName}**!`);
     setTimeout(() => setIsSaving(false), 500);
   }, [nodes, connections, designName, addItem, addMessage]);
 
+  // ============================================
+  // LOAD DESIGN FROM HISTORY
+  // ============================================
   const handleLoadDesign = useCallback(
     (item: HistoryItem) => {
       setNodes(item.nodes);
       setConnections(item.edges);
       setDesignName(item.name);
       setMessages([]);
-      addMessage('assistant', `📂 Loaded **${item.name}**`);
+      addMessage('assistant', `📂 Loaded **${item.name}** with ${item.nodes.length} components.`);
     },
     [addMessage]
   );
 
+  // ============================================
+  // NEW DESIGN
+  // ============================================
   const handleNewDesign = useCallback(() => {
     setNodes([]);
     setConnections([]);
     setDesignName('Untitled Design');
     setMessages([]);
     setSelectedNode(null);
+    setError(null);
   }, []);
 
+  // ============================================
+  // DELETE NODE
+  // ============================================
   const handleDeleteNode = useCallback((nodeId: string) => {
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     setConnections((prev) => prev.filter((c) => c.source !== nodeId && c.target !== nodeId));
     setSelectedNode(null);
   }, []);
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <div className="h-screen flex flex-col bg-white">
+      {/* NAVBAR */}
       <Navbar
         designName={designName}
         onDesignNameChange={setDesignName}
@@ -443,30 +419,32 @@ setConnections(prev => [
         isSaving={isSaving}
         nodeCount={nodes.length}
       />
+
+      {/* METRICS BAR */}
       {nodes.length > 0 && (
-  <div className="w-full border-b bg-gray-50 px-6 py-2 flex items-center justify-between text-sm">
+        <div className="w-full border-b bg-gray-50 px-6 py-2 flex items-center justify-between text-sm">
+          {/* LEFT SIDE — METRICS */}
+          <div className="flex items-center gap-6">
+            <div className="font-medium">{nodes.length} Components</div>
+            <div className="font-medium">{connections.length} Connections</div>
+            <div className="font-medium">~10K QPS</div>
+            <div className="font-medium">&lt;100ms Latency</div>
+          </div>
 
-    {/* LEFT SIDE — METRICS */}
-    <div className="flex items-center gap-6">
-      <div className="font-medium">{nodes.length} Components</div>
-      <div className="font-medium">{connections.length} Connections</div>
-      <div className="font-medium">~10K QPS</div>
-      <div className="font-medium">&lt;100ms Latency</div>
-    </div>
+          {/* RIGHT SIDE — SCORE */}
+          <div className="flex items-center gap-5">
+            <span className="font-semibold">🏆 Score:</span>
+            <span>Scal {score.scalability}%</span>
+            <span>Rel {score.reliability}%</span>
+            <span>Lat {score.latency}%</span>
+            <span>Cost {score.cost}%</span>
+          </div>
+        </div>
+      )}
 
-    {/* RIGHT SIDE — SCORE */}
-    <div className="flex items-center gap-5">
-      <span className="font-semibold">🏆 Score:</span>
-      <span>Scal {score.scalability}%</span>
-      <span>Rel {score.reliability}%</span>
-      <span>Lat {score.latency}%</span>
-      <span>Cost {score.cost}%</span>
-    </div>
-
-  </div>
-)}
-
+      {/* MAIN CONTENT */}
       <div className="flex-1 flex h-[calc(100vh-64px)] overflow-hidden">
+        {/* HISTORY SIDEBAR */}
         <div className="hidden lg:block">
           <HistorySidebar
             onLoadDesign={handleLoadDesign}
@@ -477,12 +455,12 @@ setConnections(prev => [
           />
         </div>
 
+        {/* CANVAS AREA */}
         <div
           ref={canvasRef}
           className="flex-1 relative h-full min-h-0"
           id="architecture-canvas"
         >
-
           {nodes.length > 0 ? (
             <ReactFlowProvider>
               <ArchitectureCanvas
@@ -497,40 +475,53 @@ setConnections(prev => [
             </div>
           )}
 
+          {/* BOTTLENECK OVERLAY */}
           <BottleneckOverlay
             nodes={nodes}
             isVisible={showBottlenecks}
             onClose={() => setShowBottlenecks(false)}
           />
 
+          {/* ERROR TOAST */}
           {error && (
             <div className="absolute bottom-4 left-4 right-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg shadow-lg z-50">
-              <div className="flex justify-between">
-                <span>{error}</span>
-                <button onClick={() => setError(null)}>✕</button>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">{error}</span>
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-4 text-red-500 hover:text-red-700 font-bold"
+                >
+                  ✕
+                </button>
               </div>
             </div>
           )}
         </div>
 
+        {/* DETAIL PANEL (when node selected) */}
         {selectedNode && (
-          <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} onDelete={handleDeleteNode} />
+          <DetailPanel
+            node={selectedNode}
+            onClose={() => setSelectedNode(null)}
+            onDelete={handleDeleteNode}
+          />
         )}
 
+        {/* CHAT PANEL */}
         <div className="w-full lg:w-[420px] border-l border-gray-200 bg-white flex flex-col h-full">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <ChatContainer
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              suggestions={getSuggestedPrompts(nodes.length > 0)}
+              className="flex-1 min-h-0 border-0 shadow-none rounded-none"
+            />
+          </div>
+        </div>
+      </div>
 
-  <div className="flex-1 min-h-0 flex flex-col">
-    <ChatContainer
-      messages={messages}
-      onSendMessage={handleSendMessage}
-      isLoading={isLoading}
-      suggestions={getSuggestedPrompts(nodes.length > 0)}
-      className="flex-1 min-h-0 border-0 shadow-none rounded-none"
-    />
-  </div>
-</div>
-</div>
-
+      {/* EXPORT MODAL */}
       <ExportModal
         isOpen={showExport}
         onClose={() => setShowExport(false)}
@@ -547,7 +538,10 @@ setConnections(prev => [
   );
 }
 
- export default function DesignPage() {
+// ============================================
+// PAGE EXPORT WITH SUSPENSE
+// ============================================
+export default function DesignPage() {
   return (
     <Suspense
       fallback={
