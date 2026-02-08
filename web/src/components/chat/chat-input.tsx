@@ -78,7 +78,7 @@ export function ChatInput({
                 key={action}
                 type="button"
                 onClick={() => handleQuickAction(action)}
-                className="px-3 py-1.5 bg-gray-100 hover:bg-indigo-100 hover:text-indigo-700 text-gray-700 rounded-full text-sm transition-colors"
+                className="px-3 py-1.5 bg-gray-100 hover:bg-indigo-100 hover:text-indigo-700 text-gray-700 rounded-full text-sm transition-all shadow-sm hover:shadow"
               >
                 {action}
               </button>
@@ -102,7 +102,7 @@ export function ChatInput({
             placeholder={placeholder}
             disabled={isLoading}
             rows={1}
-            className="w-full px-4 py-3 pr-16 bg-white border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-400"
+            className="w-full px-4 py-3 pr-16 bg-white border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder-gray-400 shadow-sm"
           />
           <div className="absolute right-2 bottom-2 flex items-center gap-1">
             <button
@@ -119,7 +119,7 @@ export function ChatInput({
         <button
           type="submit"
           disabled={!message.trim() || isLoading}
-          className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white rounded-xl transition-colors disabled:cursor-not-allowed"
+          className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white rounded-xl transition-all shadow-md hover:shadow-lg disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -8,6 +8,7 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+   useReactFlow,
   type Node,
   type Edge,
   type Connection,
@@ -17,11 +18,12 @@ import {
   MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo, useEffect, useRef} from 'react';
 
 import { nodeTypes } from '@/components/nodes';
 import { edgeTypes } from '@/components/edges';
 import type { ArchitectureNodeData, ArchitectureConnection } from '@/types/architecture';
+import { ConnectionLineType } from '@xyflow/react';
 
 interface ArchitectureCanvasProps {
   initialNodes?: ArchitectureNodeData[];
@@ -87,6 +89,9 @@ export function ArchitectureCanvas({
   initialConnections = [],
   onNodeSelect,
 }: ArchitectureCanvasProps) {
+  const { fitView } = useReactFlow();
+  const hasCenteredRef = useRef(false);
+
   const flowNodes = useMemo(() => calculateNodePositions(initialNodes), [initialNodes]);
 
   const flowEdges = useMemo<Edge[]>(() => {
@@ -99,7 +104,7 @@ export function ArchitectureCanvas({
         const isHot = latency > 50;
 
         return {
-          id: conn.id || `edge-${conn.source}-${conn.target}`,
+          id: conn.id || `edge-${conn.source}-${conn.target}-${Math.random()}`,
           source: conn.source,
           target: conn.target,
           type: 'smoothstep',
@@ -124,8 +129,35 @@ export function ArchitectureCanvas({
   const [nodes, setNodes, onNodesChangeHandler] = useNodesState<Node>(flowNodes);
   const [edges, setEdges, onEdgesChangeHandler] = useEdgesState<Edge>(flowEdges);
 
-  useEffect(() => setNodes(flowNodes), [flowNodes, setNodes]);
-  useEffect(() => setEdges(flowEdges), [flowEdges, setEdges]);
+  useEffect(() => {
+    setNodes(flowNodes);
+  }, [initialNodes]);
+
+  useEffect(() => {
+    setEdges(flowEdges);
+  }, [initialConnections]);
+
+  // Auto center ONLY first time a design loads
+useEffect(() => {
+  if (nodes.length === 0) return;
+
+  if (!hasCenteredRef.current) {
+    hasCenteredRef.current = true;
+
+    setTimeout(() => {
+      fitView({
+        padding: 0.25,
+        duration: 500,
+      });
+    }, 150);
+  }
+}, [nodes, fitView]);
+
+  // Reset centering when a new architecture is loaded
+useEffect(() => {
+  hasCenteredRef.current = false;
+}, [initialNodes]);
+
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => onNodesChangeHandler(changes),
@@ -170,7 +202,7 @@ export function ArchitectureCanvas({
   );
 
   return (
-    <div className="w-full h-full absolute inset-0">
+    <div className="w-full h-full relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -179,9 +211,11 @@ export function ArchitectureCanvas({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
+        connectionLineStyle={{ stroke: '#6366f1', strokeWidth: 2 }}
+        connectionLineType={ConnectionLineType.SmoothStep}
         onNodeClick={onNodeClick}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
+        onPaneClick={() => onNodeSelect?.(null)}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
         minZoom={0.3}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}

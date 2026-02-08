@@ -9,14 +9,16 @@ import { ChatContainer, type Message } from '@/components/chat';
 import { WelcomeCard } from '@/components/guidance';
 import { ExportModal } from '@/components/export';
 import { HistorySidebar } from '@/components/history';
-import { DetailPanel, MetricsPanel, BottleneckPanel } from '@/components/panels';
+import { DetailPanel} from '@/components/panels';
 import { BottleneckOverlay } from '@/components/canvas/bottleneck-overlay';
 import { Navbar } from '@/components/layout';
 import { useExport } from '@/lib/hooks';
 import { useHistoryStore, type HistoryItem } from '@/lib/stores';
-import { generateArchitecture, detectIntent, getSuggestedPrompts } from '@/lib/ai/architecture-generator';
+import { getSuggestedPrompts } from '@/lib/ai/architecture-generator';
 import { getGreetingResponse } from '@/lib/ai/response-parser';
 import type { ArchitectureNodeData, ArchitectureConnection } from '@/types';
+import { calculateArchitectureScore } from '@/lib/architecture-score';
+import { architectureAgent } from '@/lib/ai/architecture-agent';
 
 // ============================================
 // TEMPLATES (kept for fast offline fallback)
@@ -225,7 +227,22 @@ function processLocalCommand(
 
   return null;
 }
-
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1">
+        <span>{label}</span>
+        <span className="font-medium">{value}%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <div
+          className="bg-indigo-600 h-2 rounded-full"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 // ============================================
 // MAIN DESIGN EDITOR
 // ============================================
@@ -239,6 +256,7 @@ function DesignEditorContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [nodes, setNodes] = useState<ArchitectureNodeData[]>([]);
   const [connections, setConnections] = useState<ArchitectureConnection[]>([]);
+  const score = calculateArchitectureScore(nodes);
   const [isLoading, setIsLoading] = useState(false);
   const [designName, setDesignName] = useState('Untitled Design');
   const [selectedNode, setSelectedNode] = useState<ArchitectureNodeData | null>(null);
@@ -290,83 +308,97 @@ function DesignEditorContent() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
-      addMessage('user', content);
-      setIsLoading(true);
+  async (content: string) => {
+    addMessage('user', content);
+    setIsLoading(true);
 
-      const lower = content.toLowerCase().trim();
+    const lower = content.toLowerCase().trim();
 
-      try {
-        // 1. Greetings
-        if (/^(hi|hello|hey)[\s!.,?]*$/i.test(lower)) {
-          addMessage('assistant', getGreetingResponse());
-          return;
-        }
-
-        // 2. Clear/Reset
-        if (lower === 'clear' || lower === 'reset') {
-          setNodes([]);
-          setConnections([]);
-          setDesignName('Untitled Design');
-          addMessage('assistant', '🗑️ Canvas cleared!\n\nTry: "Design Twitter" or "Design Netflix"');
-          return;
-        }
-
-        // 3. Show bottlenecks
-        if (lower.includes('bottleneck') || lower.includes('analyze')) {
-          setShowBottlenecks(true);
-          addMessage('assistant', '🔍 Analyzing architecture for bottlenecks...');
-          return;
-        }
-
-        // 4. Check templates first (instant)
-        const templateKey = lower.replace(/^(design|build|create)\s+/i, '').trim();
-        if (architectureTemplates[templateKey]) {
-          const template = architectureTemplates[templateKey];
-          setNodes(template.nodes);
-          setConnections(template.connections);
-          setDesignName(template.name);
-          addMessage('assistant', `🎉 **${template.name}** created!\n\n${template.nodes.length} components ready.\n\nTry: "Add caching" or "Show bottlenecks"`);
-          return;
-        }
-
-        // 5. Try local command processing (add/remove)
-        const localResult = processLocalCommand(content, nodes, connections);
-        if (localResult) {
-          setNodes(localResult.nodes);
-          setConnections(localResult.connections);
-          addMessage('assistant', localResult.message);
-          return;
-        }
-
-        // 6. Fall back to AI (Groq) for anything else
-        const intent = detectIntent(content);
-        if (intent === 'design' || intent === 'add' || intent === 'question') {
-          addMessage('assistant', '🏗️ Generating with AI...');
-
-          try {
-            const result = await generateArchitecture(content, nodes.length > 0 ? nodes : undefined);
-            setNodes(result.nodes);
-            setConnections(result.connections);
-            setDesignName(result.name);
-            addMessage('assistant', `✅ ${result.message}\n\n${result.nodes.length} components generated.`);
-          } catch (aiError) {
-            addMessage('assistant', '⚠️ AI generation failed. Try a simpler command like "Add cache" or "Design Twitter".');
-          }
-        } else {
-          addMessage(
-            'assistant',
-            '🤔 I specialize in system design.\n\nTry:\n• "Design Twitter"\n• "Add caching"\n• "Show bottlenecks"\n• "Add database"'
-          );
-        }
-      } catch {
-        addMessage('assistant', '❌ Something went wrong. Please try again.');
-      } finally {
-        setIsLoading(false);
+    try {
+      // 1️⃣ Greeting
+      if (/^(hi|hello|hey)[\s!.,?]*$/i.test(lower)) {
+        addMessage('assistant', getGreetingResponse());
+        return;
       }
-    },
-    [addMessage, nodes, connections]
-  );
+
+      // 2️⃣ Clear canvas
+      if (lower === 'clear' || lower === 'reset') {
+        setNodes([]);
+        setConnections([]);
+        setDesignName('Untitled Design');
+        addMessage('assistant', '🗑️ Canvas cleared.');
+        return;
+      }
+
+      // 3️⃣ Bottleneck analysis
+      if (lower.includes('bottleneck') || lower.includes('analyze')) {
+        setShowBottlenecks(true);
+        addMessage('assistant', '🔍 Analyzing architecture...');
+        return;
+      }
+
+      // 4️⃣ TEMPLATE LOAD (optional — keep for demo)
+      const templateKey = lower.replace(/^(design|build|create)\s+/i, '').trim();
+      if (architectureTemplates[templateKey]) {
+        const template = architectureTemplates[templateKey];
+        setNodes(template.nodes);
+        setConnections(template.connections);
+        setDesignName(template.name);
+        addMessage('assistant', `🎉 ${template.name} loaded.`);
+        return;
+      }
+
+      // 5️⃣ 🧠 PURE AI AGENT (NO KEYWORDS, NO HARDCODING)
+      addMessage('assistant', '🧠 Thinking like a system architect...');
+
+      const result = await architectureAgent(
+        content,
+        nodes.length > 0 ? nodes : undefined
+      );
+
+      const uniqueNodes = Array.from(
+        new Map(result.nodes.map(n => [n.id, n])).values()
+      );
+
+      setNodes(prev => {
+      const merged = [...prev];
+
+      uniqueNodes.forEach(newNode => {
+        if (!merged.some(n => n.id === newNode.id)) {
+          merged.push(newNode);
+        }
+      });
+
+      return merged;
+    });
+
+setConnections(prev => [
+  ...prev,
+  ...(result.connections || [])
+]);
+
+      setDesignName(result.name);
+
+      addMessage(
+  'assistant',
+  `✨ ${result.message}
+
+📐 Architecture updated intelligently.`
+);
+
+
+    } catch {
+      addMessage(
+        'assistant',
+        '⚠️ I could not understand that change. Try describing the system improvement.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  },
+  [addMessage, nodes, connections]
+);
+
 
   const handleSave = useCallback(() => {
     if (nodes.length === 0) return;
@@ -411,8 +443,30 @@ function DesignEditorContent() {
         isSaving={isSaving}
         nodeCount={nodes.length}
       />
+      {nodes.length > 0 && (
+  <div className="w-full border-b bg-gray-50 px-6 py-2 flex items-center justify-between text-sm">
 
-      <div className="flex-1 flex overflow-hidden">
+    {/* LEFT SIDE — METRICS */}
+    <div className="flex items-center gap-6">
+      <div className="font-medium">{nodes.length} Components</div>
+      <div className="font-medium">{connections.length} Connections</div>
+      <div className="font-medium">~10K QPS</div>
+      <div className="font-medium">&lt;100ms Latency</div>
+    </div>
+
+    {/* RIGHT SIDE — SCORE */}
+    <div className="flex items-center gap-5">
+      <span className="font-semibold">🏆 Score:</span>
+      <span>Scal {score.scalability}%</span>
+      <span>Rel {score.reliability}%</span>
+      <span>Lat {score.latency}%</span>
+      <span>Cost {score.cost}%</span>
+    </div>
+
+  </div>
+)}
+
+      <div className="flex-1 flex h-[calc(100vh-64px)] overflow-hidden">
         <div className="hidden lg:block">
           <HistorySidebar
             onLoadDesign={handleLoadDesign}
@@ -423,7 +477,12 @@ function DesignEditorContent() {
           />
         </div>
 
-        <div ref={canvasRef} className="flex-1 relative h-full" id="architecture-canvas">
+        <div
+          ref={canvasRef}
+          className="flex-1 relative h-full min-h-0"
+          id="architecture-canvas"
+        >
+
           {nodes.length > 0 ? (
             <ReactFlowProvider>
               <ArchitectureCanvas
@@ -458,24 +517,19 @@ function DesignEditorContent() {
           <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} onDelete={handleDeleteNode} />
         )}
 
-        <div className="w-full lg:w-[380px] border-l border-gray-200 bg-white flex flex-col">
-          <ChatContainer
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            suggestions={getSuggestedPrompts(nodes.length > 0)}
-            className="flex-1 border-0 shadow-none rounded-none"
-          />
-          {nodes.length > 0 && (
-            <div className="border-t border-gray-200">
-              <MetricsPanel
-                nodeCount={nodes.length}
-                connectionCount={connections.length}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+        <div className="w-full lg:w-[420px] border-l border-gray-200 bg-white flex flex-col h-full">
+
+  <div className="flex-1 min-h-0 flex flex-col">
+    <ChatContainer
+      messages={messages}
+      onSendMessage={handleSendMessage}
+      isLoading={isLoading}
+      suggestions={getSuggestedPrompts(nodes.length > 0)}
+      className="flex-1 min-h-0 border-0 shadow-none rounded-none"
+    />
+  </div>
+</div>
+</div>
 
       <ExportModal
         isOpen={showExport}
@@ -493,7 +547,7 @@ function DesignEditorContent() {
   );
 }
 
-export default function DesignPage() {
+ export default function DesignPage() {
   return (
     <Suspense
       fallback={

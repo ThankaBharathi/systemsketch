@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Edit2, Trash2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { ArchitectureNodeData } from '@/types';
 import { NODE_ICONS, NODE_COLORS } from '@/types';
+import { useEffect } from 'react';
 
 interface DetailPanelProps {
   node: ArchitectureNodeData | null;
@@ -14,6 +15,13 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelProps) {
+  useEffect(() => {
+  const handleEsc = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') onClose();
+  };
+  window.addEventListener('keydown', handleEsc);
+  return () => window.removeEventListener('keydown', handleEsc);
+}, [onClose]);
   if (!node) return null;
 
   const colors = NODE_COLORS[node.type];
@@ -22,7 +30,7 @@ export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelPr
   const getStatusIcon = (status?: string) => {
     switch (status) {
       case 'healthy':
-        return <CheckCircle className="text-green-500\" size={16} />;
+        return <CheckCircle className="text-green-500" size={16} />;
       case 'warning':
         return <AlertTriangle className="text-yellow-500" size={16} />;
       case 'error':
@@ -47,12 +55,13 @@ export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelPr
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 20 }}
-        className="w-80 bg-white border-l border-gray-200 flex flex-col h-full"
-      >
+        <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      className="fixed right-[320px] top-16 w-80 bg-white border-l border-gray-200 flex flex-col h-[calc(100vh-64px)] shadow-xl z-50"
+    >
+
         {/* Header */}
         <div className={`p-4 ${colors.bg} border-b ${colors.border}`}>
           <div className="flex items-start justify-between">
@@ -63,12 +72,13 @@ export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelPr
                 <p className="text-sm text-gray-500 capitalize">{node.type}</p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 hover:bg-white/50 rounded-lg transition-colors"
-            >
-              <X size={18} className="text-gray-500" />
-            </button>
+             <button
+            onClick={onClose}
+            className="p-2 bg-white shadow-sm hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={18} className="text-gray-700" />
+          </button>
+
           </div>
         </div>
 
@@ -102,7 +112,7 @@ export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelPr
               <p className="text-sm text-gray-700 capitalize font-medium">
                 {node.type}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">
                 {getTypeDescription(node.type)}
               </p>
             </div>
@@ -158,13 +168,41 @@ export function DetailPanel({ node, onClose, onDelete, onUpdate }: DetailPanelPr
 
 function getTypeDescription(type: string): string {
   const descriptions: Record<string, string> = {
-    service: 'Backend service or microservice handling business logic',
-    database: 'Data storage for persistent information',
-    cache: 'In-memory storage for fast data access',
-    queue: 'Message broker for async communication',
-    gateway: 'Entry point handling routing and auth',
-    loadbalancer: 'Distributes traffic across servers',
-    client: 'Frontend application or user interface',
+    service: `• Handles core business logic  
+• Processes API requests  
+• Communicates with DB/cache  
+• Can scale horizontally`,
+
+    database: `• Stores persistent application data  
+• Supports read/write operations  
+• Ensures durability & consistency  
+• Central source of truth`,
+
+    cache: `• Stores frequently accessed data  
+• Reduces DB load  
+• Improves response time  
+• Typically uses Redis/Memcached`,
+
+    queue: `• Enables async processing  
+• Buffers high traffic spikes  
+• Decouples services  
+• Used for events & background jobs`,
+
+    gateway: `• Entry point for all client requests  
+• Handles routing & authentication  
+• Rate limiting & monitoring  
+• Security layer`,
+
+    loadbalancer: `• Distributes traffic across services  
+• Improves reliability & uptime  
+• Prevents server overload  
+• Enables horizontal scaling`,
+
+    client: `• User-facing interface  
+• Sends API requests  
+• Displays processed data  
+• Web or mobile application`,
   };
+
   return descriptions[type] ?? 'System component';
 }
