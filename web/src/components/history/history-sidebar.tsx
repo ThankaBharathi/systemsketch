@@ -165,7 +165,7 @@ export function HistorySidebar({
                           {item.name}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
-                          {item.nodes.length} nodes • {formatDate(item.createdAt)}
+                          {item.nodes.length} nodes • {formatDate(new Date(item.createdAt))}
                         </p>
                       </div>
                       <button
